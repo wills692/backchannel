@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BackChannel.App/BackChannel.App.csproj" />
+    <Project Path="src/BackChannel.Core/BackChannel.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BackChannel.Core.Tests/BackChannel.Core.Tests.csproj" />
+  </Folder>
+</Solution>
