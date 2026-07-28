@@ -11,6 +11,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\BackChannel.App\BackChannel.App.csproj" />
     <ProjectReference Include="..\..\src\BackChannel.Core\BackChannel.Core.csproj" />
   </ItemGroup>
 </Project>
