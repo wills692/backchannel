@@ -59,7 +59,7 @@ public sealed class MessageCommand(
         if (!string.IsNullOrWhiteSpace(message))
         {
             await session.SendAsync(message, cancellationToken).ConfigureAwait(false);
-            terminal.WriteOwnMessage(message);
+            terminal.WriteOwnMessage(session.ActiveConversation!, message);
         }
     }
 

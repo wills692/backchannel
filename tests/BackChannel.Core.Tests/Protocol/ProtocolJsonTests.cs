@@ -10,6 +10,8 @@ public sealed class ProtocolJsonTests
     [Fact]
     public void EveryEnvelopeTypeRoundTripsPolymorphically()
     {
+        Assert.Equal(2, Envelope.CurrentProtocolVersion);
+
         Envelope[] messages =
         [
             new HelloMessage
@@ -29,6 +31,12 @@ public sealed class ProtocolJsonTests
             new ChatMessage
             {
                 ConversationId = Guid.NewGuid(),
+                ConversationName = "Router Crew",
+                ParticipantFingerprints =
+                [
+                    new string('a', 64),
+                    new string('b', 64),
+                ],
                 SenderFingerprint = new string('a', 64),
                 RecipientKeys =
                 [

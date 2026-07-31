@@ -9,7 +9,7 @@ namespace BackChannel.Core.Protocol;
 [JsonDerivedType(typeof(GoodbyeMessage), "goodbye")]
 public abstract record Envelope
 {
-    public const int CurrentProtocolVersion = 1;
+    public const int CurrentProtocolVersion = 2;
 
     public int ProtocolVersion { get; init; } = CurrentProtocolVersion;
 

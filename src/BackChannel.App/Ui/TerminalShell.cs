@@ -91,8 +91,15 @@ public sealed class TerminalShell(
                 break;
 
             case PeerDepartedEvent departed:
+                var activeConversationClosed =
+                    session.RemovePeer(departed.Fingerprint);
                 terminal.WriteInfo(
                     $"Peer {departed.Fingerprint.Value[..12]} left.");
+                if (activeConversationClosed)
+                {
+                    terminal.WriteWarning(
+                        "The active conversation closed because a member left.");
+                }
                 break;
 
             case ChatMessageReceivedEvent chat:
@@ -124,11 +131,12 @@ public sealed class TerminalShell(
             }
 
             var plaintext = node.DecryptMessage(chat.Message, sender);
-            session.Receive(sender, chat.Message.ConversationId);
-            terminal.WriteIncomingMessage(sender, plaintext);
+            var conversation = session.Receive(chat.Message, sender);
+            terminal.WriteIncomingMessage(conversation, sender, plaintext);
         }
         catch (Exception exception) when (
             exception is CryptographicException
+                or InvalidDataException
                 or FormatException
                 or ArgumentException)
         {

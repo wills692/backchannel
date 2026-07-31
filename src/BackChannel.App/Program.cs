@@ -24,7 +24,7 @@ builder.Services
     .Bind(builder.Configuration.GetSection(BackChannelOptions.SectionName))
     .Validate(
         BackChannelOptions.IsValid,
-        "BackChannel configuration contains an invalid port, connection limit, or name.")
+        "BackChannel configuration contains an invalid setting.")
     .ValidateOnStart();
 
 builder.Services.AddSingleton<BackChannelNode>();

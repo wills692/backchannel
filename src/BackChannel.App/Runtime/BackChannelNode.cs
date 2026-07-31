@@ -26,6 +26,12 @@ public sealed class BackChannelNode : IHostedService, IAsyncDisposable
             new EventId(2, nameof(GoodbyeFailed)),
             "Could not broadcast the shutdown notice.");
 
+    private static readonly Action<ILogger, Exception?> AnnouncementFailed =
+        LoggerMessage.Define(
+            LogLevel.Debug,
+            new EventId(3, nameof(AnnouncementFailed)),
+            "Could not broadcast the periodic presence announcement.");
+
     private readonly BackChannelOptions _options;
     private readonly ILogger<BackChannelNode> _logger;
     private readonly Channel<InboundEvent> _events =
@@ -40,6 +46,8 @@ public sealed class BackChannelNode : IHostedService, IAsyncDisposable
 
     private TcpMessageListener? _tcpListener;
     private UdpDiscoveryService? _discovery;
+    private CancellationTokenSource? _maintenanceCts;
+    private Task? _maintenanceTask;
     private bool _disposed;
 
     public BackChannelNode(
@@ -70,6 +78,8 @@ public sealed class BackChannelNode : IHostedService, IAsyncDisposable
             : _options.MachineName.Trim();
 
     public Fingerprint Fingerprint => _identity.Fingerprint;
+
+    public PublicIdentity PublicIdentity => _identity.PublicIdentity;
 
     public int TcpPort =>
         _tcpListener?.LocalPort
@@ -125,6 +135,10 @@ public sealed class BackChannelNode : IHostedService, IAsyncDisposable
 
             _tcpListener = tcpListener;
             _discovery = discovery;
+            _maintenanceCts = new CancellationTokenSource();
+            _maintenanceTask = RunMaintenanceAsync(
+                discovery,
+                _maintenanceCts.Token);
 
             NodeStarted(
                 _logger,
@@ -167,6 +181,7 @@ public sealed class BackChannelNode : IHostedService, IAsyncDisposable
         var message = HybridCipher.Encrypt(
             plaintext,
             conversation.Id,
+            conversation.Name,
             _identity,
             recipients.Select(static peer => peer.Identity));
 
@@ -190,10 +205,34 @@ public sealed class BackChannelNode : IHostedService, IAsyncDisposable
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
+        var maintenanceCts = _maintenanceCts;
+        var maintenanceTask = _maintenanceTask;
         var discovery = _discovery;
         var tcpListener = _tcpListener;
+        _maintenanceCts = null;
+        _maintenanceTask = null;
         _discovery = null;
         _tcpListener = null;
+
+        if (maintenanceCts is not null)
+        {
+            maintenanceCts.Cancel();
+
+            if (maintenanceTask is not null)
+            {
+                try
+                {
+                    await maintenanceTask.WaitAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                    when (maintenanceCts.IsCancellationRequested)
+                {
+                }
+            }
+
+            maintenanceCts.Dispose();
+        }
 
         if (discovery is not null)
         {
@@ -233,4 +272,51 @@ public sealed class BackChannelNode : IHostedService, IAsyncDisposable
     private UdpDiscoveryService GetDiscovery() =>
         _discovery
         ?? throw new InvalidOperationException("The BackChannel node is not running.");
+
+    private async Task RunMaintenanceAsync(
+        UdpDiscoveryService discovery,
+        CancellationToken cancellationToken)
+    {
+        await AnnounceAndRemoveStalePeersAsync(discovery, cancellationToken)
+            .ConfigureAwait(false);
+
+        using var timer = new PeriodicTimer(
+            TimeSpan.FromSeconds(_options.AnnouncementIntervalSeconds));
+
+        while (await timer.WaitForNextTickAsync(cancellationToken)
+                   .ConfigureAwait(false))
+        {
+            await AnnounceAndRemoveStalePeersAsync(discovery, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async Task AnnounceAndRemoveStalePeersAsync(
+        UdpDiscoveryService discovery,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await discovery.SendHelloAsync(cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (
+            exception is IOException or SocketException)
+        {
+            AnnouncementFailed(_logger, exception);
+        }
+
+        var staleBefore = DateTimeOffset.UtcNow.Subtract(
+            TimeSpan.FromSeconds(_options.PeerTimeoutSeconds));
+
+        foreach (var peer in Peers.RemoveStale(staleBefore))
+        {
+            await _events.Writer.WriteAsync(
+                    new PeerDepartedEvent(
+                        peer.Fingerprint,
+                        DateTimeOffset.UtcNow),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
 }

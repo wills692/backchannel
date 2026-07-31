@@ -203,6 +203,15 @@ public sealed class UdpDiscoveryService : IAsyncDisposable
             {
                 break;
             }
+            catch (SocketException exception)
+                when (exception.SocketErrorCode == SocketError.ConnectionReset)
+            {
+                // Windows reports an ICMP "port unreachable" response from a
+                // previous UDP send on the next receive. UDP is connectionless,
+                // so a temporarily absent discovery target must not stop the
+                // listener.
+                continue;
+            }
             catch (Exception exception)
             {
                 await PublishFaultAsync(

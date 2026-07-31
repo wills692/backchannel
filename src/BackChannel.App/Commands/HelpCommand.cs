@@ -7,7 +7,7 @@ public sealed class HelpCommand(
 {
     private static readonly (string Name, string Description)[] Commands =
     [
-        ("group", "Create a group conversation (milestone 5)."),
+        ("group", "Create or activate an encrypted group conversation."),
         ("hello", "Broadcast your presence on the LAN."),
         ("help", "Show available commands."),
         ("msg", "Select a peer, optionally using /msg <name> [message]."),

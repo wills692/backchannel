@@ -48,4 +48,21 @@ public sealed class BackChannelOptionsTests
 
         Assert.False(BackChannelOptions.IsValid(options));
     }
+
+    [Theory]
+    [InlineData(0, 90)]
+    [InlineData(30, 30)]
+    [InlineData(30, 29)]
+    public void InvalidLifecycleIntervalsFailValidation(
+        int announcementIntervalSeconds,
+        int peerTimeoutSeconds)
+    {
+        var options = new BackChannelOptions
+        {
+            AnnouncementIntervalSeconds = announcementIntervalSeconds,
+            PeerTimeoutSeconds = peerTimeoutSeconds,
+        };
+
+        Assert.False(BackChannelOptions.IsValid(options));
+    }
 }

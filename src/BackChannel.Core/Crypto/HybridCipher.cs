@@ -16,7 +16,23 @@ public static class HybridCipher
         IdentityKeyPair sender,
         IEnumerable<PublicIdentity> recipients)
     {
+        return Encrypt(
+            plaintext,
+            conversationId,
+            "Conversation",
+            sender,
+            recipients);
+    }
+
+    public static ChatMessage Encrypt(
+        string plaintext,
+        Guid conversationId,
+        string conversationName,
+        IdentityKeyPair sender,
+        IEnumerable<PublicIdentity> recipients)
+    {
         ArgumentNullException.ThrowIfNull(plaintext);
+        ArgumentException.ThrowIfNullOrWhiteSpace(conversationName);
         ArgumentNullException.ThrowIfNull(sender);
         ArgumentNullException.ThrowIfNull(recipients);
 
@@ -34,6 +50,33 @@ public static class HybridCipher
                 nameof(recipients));
         }
 
+        if (recipientList.Any(
+                recipient => recipient.Fingerprint == sender.Fingerprint))
+        {
+            throw new ArgumentException(
+                "The sender cannot also be an encrypted-message recipient.",
+                nameof(recipients));
+        }
+
+        if (conversationName.Length > ChatMessage.MaximumConversationNameLength)
+        {
+            throw new ArgumentException(
+                $"Conversation names cannot exceed {ChatMessage.MaximumConversationNameLength} characters.",
+                nameof(conversationName));
+        }
+
+        if (recipientList.Length + 1 > ChatMessage.MaximumParticipantCount)
+        {
+            throw new ArgumentException(
+                $"A conversation cannot exceed {ChatMessage.MaximumParticipantCount} participants.",
+                nameof(recipients));
+        }
+
+        var participantFingerprints = recipientList
+            .Select(static recipient => recipient.Fingerprint.Value)
+            .Append(sender.Fingerprint.Value)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
         var contentKey = RandomNumberGenerator.GetBytes(ContentKeySize);
         var nonce = RandomNumberGenerator.GetBytes(NonceSize);
         var authenticationTag = new byte[AuthenticationTagSize];
@@ -58,6 +101,8 @@ public static class HybridCipher
             var unsignedMessage = new ChatMessage
             {
                 ConversationId = conversationId,
+                ConversationName = conversationName,
+                ParticipantFingerprints = participantFingerprints,
                 SenderFingerprint = sender.Fingerprint.Value,
                 RecipientKeys = recipientKeys,
                 Nonce = Convert.ToBase64String(nonce),
@@ -107,6 +152,7 @@ public static class HybridCipher
         }
 
         VerifySignature(message, sender);
+        ValidateConversationMetadata(message, recipient);
 
         var matchingKeys = message.RecipientKeys
             .Where(key => string.Equals(
@@ -193,6 +239,73 @@ public static class HybridCipher
         finally
         {
             CryptographicOperations.ZeroMemory(signaturePayload);
+        }
+    }
+
+    private static void ValidateConversationMetadata(
+        ChatMessage message,
+        IdentityKeyPair recipient)
+    {
+        if (string.IsNullOrWhiteSpace(message.ConversationName)
+            || message.ConversationName.Length
+                > ChatMessage.MaximumConversationNameLength)
+        {
+            throw new CryptographicException(
+                "The signed conversation name is invalid.");
+        }
+
+        if (message.ParticipantFingerprints.Count is < 2
+            or > ChatMessage.MaximumParticipantCount)
+        {
+            throw new CryptographicException(
+                "The signed participant list has an invalid size.");
+        }
+
+        Fingerprint[] participants;
+        Fingerprint[] recipients;
+        Fingerprint senderFingerprint;
+
+        try
+        {
+            senderFingerprint = new Fingerprint(message.SenderFingerprint);
+            participants = message.ParticipantFingerprints
+                .Select(static value => new Fingerprint(value))
+                .ToArray();
+            recipients = message.RecipientKeys
+                .Select(
+                    static recipient =>
+                        new Fingerprint(recipient.RecipientFingerprint))
+                .ToArray();
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or FormatException)
+        {
+            throw new CryptographicException(
+                "The signed conversation contains a malformed fingerprint.",
+                exception);
+        }
+
+        if (participants.Distinct().Count() != participants.Length
+            || recipients.Distinct().Count() != recipients.Length
+            || !participants.Contains(senderFingerprint))
+        {
+            throw new CryptographicException(
+                "The signed conversation participant list is inconsistent.");
+        }
+
+        var expectedParticipants = recipients
+            .Append(senderFingerprint)
+            .OrderBy(static fingerprint => fingerprint.Value, StringComparer.Ordinal)
+            .ToArray();
+        var normalizedParticipants = participants
+            .OrderBy(static fingerprint => fingerprint.Value, StringComparer.Ordinal)
+            .ToArray();
+
+        if (!normalizedParticipants.SequenceEqual(expectedParticipants)
+            || !normalizedParticipants.Contains(recipient.Fingerprint))
+        {
+            throw new CryptographicException(
+                "The signed conversation participant list does not match its recipient keys.");
         }
     }
 }

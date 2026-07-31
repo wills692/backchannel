@@ -18,6 +18,10 @@ public sealed class BackChannelOptions
 
     public int MaximumConcurrentConnections { get; set; } = 32;
 
+    public int AnnouncementIntervalSeconds { get; set; } = 30;
+
+    public int PeerTimeoutSeconds { get; set; } = 90;
+
     public static bool IsValid(BackChannelOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -25,6 +29,9 @@ public sealed class BackChannelOptions
         return options.DiscoveryPort is > IPEndPoint.MinPort and <= IPEndPoint.MaxPort
                && options.TcpPort is >= IPEndPoint.MinPort and <= IPEndPoint.MaxPort
                && options.MaximumConcurrentConnections > 0
+               && options.AnnouncementIntervalSeconds > 0
+               && options.PeerTimeoutSeconds
+                   > options.AnnouncementIntervalSeconds
                && IsOptionalNameValid(options.DisplayName)
                && IsOptionalNameValid(options.MachineName)
                && TryGetDiscoveryTarget(options, out _);

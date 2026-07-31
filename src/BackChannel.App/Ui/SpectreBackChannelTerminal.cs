@@ -1,4 +1,5 @@
 using BackChannel.App.Runtime;
+using BackChannel.Core.Conversations;
 using BackChannel.Core.Peers;
 using Spectre.Console;
 using System.Globalization;
@@ -33,6 +34,31 @@ public sealed class SpectreBackChannelTerminal : IBackChannelTerminal
 
         return await AnsiConsole.PromptAsync(prompt, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<Peer>> SelectPeersAsync(
+        IReadOnlyList<Peer> peers,
+        CancellationToken cancellationToken)
+    {
+        var prompt = new MultiSelectionPrompt<Peer>()
+            .Title("Choose at least two peers")
+            .Required()
+            .PageSize(12)
+            .InstructionsText(
+                "[grey](Press [blue]<space>[/] to select and [green]<enter>[/] to accept.)[/]")
+            .UseConverter(
+                static peer =>
+                    $"{peer.DisplayName} ({peer.MachineName}, {peer.Fingerprint.Value[..12]})")
+            .AddChoices(peers);
+
+        return await AnsiConsole.PromptAsync(prompt, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public Task<string> ReadGroupNameAsync(CancellationToken cancellationToken)
+    {
+        var prompt = new TextPrompt<string>("Group name:");
+        return AnsiConsole.PromptAsync(prompt, cancellationToken);
     }
 
     public void ShowBanner(BackChannelNode node)
@@ -106,12 +132,26 @@ public sealed class SpectreBackChannelTerminal : IBackChannelTerminal
     public void WriteError(string message) =>
         AnsiConsole.MarkupLine($"[red]{Escape(message)}[/]");
 
-    public void WriteIncomingMessage(Peer sender, string plaintext) =>
+    public void WriteIncomingMessage(
+        Conversation conversation,
+        Peer sender,
+        string plaintext)
+    {
+        var prefix = conversation.Members.Count > 1
+            ? $"[mediumpurple1][[{Escape(conversation.Name)}]][/] "
+            : string.Empty;
         AnsiConsole.MarkupLine(
-            $"[deepskyblue1]{Escape(sender.DisplayName)}:[/] {Escape(plaintext)}");
+            $"{prefix}[deepskyblue1]{Escape(sender.DisplayName)}:[/] {Escape(plaintext)}");
+    }
 
-    public void WriteOwnMessage(string plaintext) =>
-        AnsiConsole.MarkupLine($"[green]you:[/] {Escape(plaintext)}");
+    public void WriteOwnMessage(Conversation conversation, string plaintext)
+    {
+        var prefix = conversation.Members.Count > 1
+            ? $"[mediumpurple1][[{Escape(conversation.Name)}]][/] "
+            : string.Empty;
+        AnsiConsole.MarkupLine(
+            $"{prefix}[green]you:[/] {Escape(plaintext)}");
+    }
 
     private static string Escape(string value) => Markup.Escape(value);
 }

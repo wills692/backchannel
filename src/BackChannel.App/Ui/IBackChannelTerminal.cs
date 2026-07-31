@@ -1,4 +1,5 @@
 using BackChannel.App.Runtime;
+using BackChannel.Core.Conversations;
 using BackChannel.Core.Peers;
 
 namespace BackChannel.App.Ui;
@@ -10,6 +11,12 @@ public interface IBackChannelTerminal
     Task<Peer?> SelectPeerAsync(
         IReadOnlyList<Peer> peers,
         CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<Peer>> SelectPeersAsync(
+        IReadOnlyList<Peer> peers,
+        CancellationToken cancellationToken);
+
+    Task<string> ReadGroupNameAsync(CancellationToken cancellationToken);
 
     void ShowBanner(BackChannelNode node);
 
@@ -23,7 +30,10 @@ public interface IBackChannelTerminal
 
     void WriteError(string message);
 
-    void WriteIncomingMessage(Peer sender, string plaintext);
+    void WriteIncomingMessage(
+        Conversation conversation,
+        Peer sender,
+        string plaintext);
 
-    void WriteOwnMessage(string plaintext);
+    void WriteOwnMessage(Conversation conversation, string plaintext);
 }

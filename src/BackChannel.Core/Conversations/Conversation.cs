@@ -17,6 +17,13 @@ public sealed class Conversation
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(members);
 
+        if (name.Length > Protocol.ChatMessage.MaximumConversationNameLength)
+        {
+            throw new ArgumentException(
+                $"Conversation names cannot exceed {Protocol.ChatMessage.MaximumConversationNameLength} characters.",
+                nameof(name));
+        }
+
         _members = members
             .Distinct()
             .OrderBy(static fingerprint => fingerprint.Value, StringComparer.Ordinal)
@@ -26,6 +33,13 @@ public sealed class Conversation
         {
             throw new ArgumentException(
                 "A conversation must contain at least one member.",
+                nameof(members));
+        }
+
+        if (_members.Length >= Protocol.ChatMessage.MaximumParticipantCount)
+        {
+            throw new ArgumentException(
+                $"A conversation cannot exceed {Protocol.ChatMessage.MaximumParticipantCount} total participants.",
                 nameof(members));
         }
 

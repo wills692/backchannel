@@ -7,7 +7,7 @@ namespace BackChannel.Core.Crypto;
 internal static class ChatMessageAuthenticator
 {
     private static readonly byte[] DomainSeparator =
-        "BackChannel.ChatMessage.Signature.v1"u8.ToArray();
+        "BackChannel.ChatMessage.Signature.v2"u8.ToArray();
 
     internal static byte[] CreateSignaturePayload(ChatMessage message)
     {
@@ -19,6 +19,14 @@ internal static class ChatMessageAuthenticator
         WriteBytes(stream, message.MessageId.ToByteArray());
         WriteInt64(stream, message.SentAtUtc.UtcTicks);
         WriteBytes(stream, message.ConversationId.ToByteArray());
+        WriteString(stream, message.ConversationName);
+        WriteInt32(stream, message.ParticipantFingerprints.Count);
+
+        foreach (var participant in message.ParticipantFingerprints)
+        {
+            WriteString(stream, participant);
+        }
+
         WriteString(stream, message.SenderFingerprint);
         WriteInt32(stream, message.RecipientKeys.Count);
 

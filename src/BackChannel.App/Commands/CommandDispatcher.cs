@@ -41,7 +41,9 @@ public sealed class CommandDispatcher
             {
                 await _session.SendAsync(commandLine.Text, cancellationToken)
                     .ConfigureAwait(false);
-                _terminal.WriteOwnMessage(commandLine.Text);
+                _terminal.WriteOwnMessage(
+                    _session.ActiveConversation!,
+                    commandLine.Text);
                 return;
             }
 
