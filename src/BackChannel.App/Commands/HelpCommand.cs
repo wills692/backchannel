@@ -11,6 +11,7 @@ public sealed class HelpCommand(
         ("hello", "Broadcast your presence on the LAN."),
         ("help", "Show available commands."),
         ("msg", "Select a peer, optionally using /msg <name> [message]."),
+        ("nick", "Change your display name and announce it to peers."),
         ("peers", "Show currently discovered peers."),
         ("quit", "Send a goodbye notice and exit."),
     ];

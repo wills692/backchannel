@@ -14,6 +14,8 @@ namespace BackChannel.App.Runtime;
 
 public sealed class BackChannelNode : IHostedService, IAsyncDisposable
 {
+    public const int MaximumDisplayNameLength = 128;
+
     private static readonly Action<ILogger, string, string, int, int, Exception?>
         NodeStarted = LoggerMessage.Define<string, string, int, int>(
             LogLevel.Information,
@@ -43,6 +45,7 @@ public sealed class BackChannelNode : IHostedService, IAsyncDisposable
             });
 
     private readonly IdentityKeyPair _identity = IdentityKeyPair.Create();
+    private string _displayName;
 
     private TcpMessageListener? _tcpListener;
     private UdpDiscoveryService? _discovery;
@@ -59,6 +62,9 @@ public sealed class BackChannelNode : IHostedService, IAsyncDisposable
 
         _options = options.Value;
         _logger = logger;
+        _displayName = string.IsNullOrWhiteSpace(_options.DisplayName)
+            ? Environment.UserName
+            : _options.DisplayName.Trim();
     }
 
     public PeerRegistry Peers { get; } = new();
@@ -67,10 +73,7 @@ public sealed class BackChannelNode : IHostedService, IAsyncDisposable
 
     public ChannelReader<InboundEvent> Events => _events.Reader;
 
-    public string DisplayName =>
-        string.IsNullOrWhiteSpace(_options.DisplayName)
-            ? Environment.UserName
-            : _options.DisplayName.Trim();
+    public string DisplayName => Volatile.Read(ref _displayName);
 
     public string MachineName =>
         string.IsNullOrWhiteSpace(_options.MachineName)
@@ -157,6 +160,32 @@ public sealed class BackChannelNode : IHostedService, IAsyncDisposable
 
     public Task BroadcastHelloAsync(CancellationToken cancellationToken = default) =>
         GetDiscovery().SendHelloAsync(cancellationToken: cancellationToken);
+
+    public static bool IsValidDisplayName(string displayName) =>
+        !string.IsNullOrWhiteSpace(displayName)
+        && displayName.Trim().Length <= MaximumDisplayNameLength;
+
+    public async Task ChangeDisplayNameAsync(
+        string displayName,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
+
+        var normalizedDisplayName = displayName.Trim();
+        if (!IsValidDisplayName(normalizedDisplayName))
+        {
+            throw new ArgumentException(
+                $"Display names must contain 1-{MaximumDisplayNameLength} characters.",
+                nameof(displayName));
+        }
+
+        var discovery = GetDiscovery();
+        discovery.UpdateDisplayName(normalizedDisplayName);
+        Volatile.Write(ref _displayName, normalizedDisplayName);
+
+        await discovery.SendHelloAsync(cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+    }
 
     public async Task SendMessageAsync(
         Conversation conversation,

@@ -13,7 +13,7 @@ public sealed class UdpDiscoveryService : IAsyncDisposable
     private const int MaximumNameLength = 128;
     private const int MaximumDatagramLength = 16 * 1024;
 
-    private readonly LocalNode _localNode;
+    private LocalNode _localNode;
     private readonly PeerRegistry _peerRegistry;
     private readonly ChannelWriter<InboundEvent> _events;
     private readonly UdpDiscoveryOptions _options;
@@ -52,6 +52,28 @@ public sealed class UdpDiscoveryService : IAsyncDisposable
             return endpoint?.Port
                    ?? throw new InvalidOperationException("UDP discovery is not running.");
         }
+    }
+
+    public void UpdateDisplayName(string displayName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
+
+        var normalizedDisplayName = displayName.Trim();
+        if (normalizedDisplayName.Length > MaximumNameLength)
+        {
+            throw new ArgumentException(
+                $"Display names must contain 1-{MaximumNameLength} characters.",
+                nameof(displayName));
+        }
+
+        var localNode = Volatile.Read(ref _localNode);
+        Interlocked.Exchange(
+            ref _localNode,
+            new LocalNode(
+                localNode.MachineName,
+                normalizedDisplayName,
+                localNode.Identity,
+                localNode.TcpPort));
     }
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
@@ -105,12 +127,13 @@ public sealed class UdpDiscoveryService : IAsyncDisposable
         IPEndPoint? target = null,
         CancellationToken cancellationToken = default)
     {
+        var localNode = Volatile.Read(ref _localNode);
         var hello = new HelloMessage
         {
-            MachineName = _localNode.MachineName,
-            DisplayName = _localNode.DisplayName,
-            PublicKey = _localNode.Identity.EncodedKey,
-            TcpPort = _localNode.TcpPort,
+            MachineName = localNode.MachineName,
+            DisplayName = localNode.DisplayName,
+            PublicKey = localNode.Identity.EncodedKey,
+            TcpPort = localNode.TcpPort,
         };
 
         return SendDiscoveryMessageAsync(
@@ -358,12 +381,13 @@ public sealed class UdpDiscoveryService : IAsyncDisposable
         IPEndPoint target,
         CancellationToken cancellationToken)
     {
+        var localNode = Volatile.Read(ref _localNode);
         var announce = new AnnounceMessage
         {
-            MachineName = _localNode.MachineName,
-            DisplayName = _localNode.DisplayName,
-            PublicKey = _localNode.Identity.EncodedKey,
-            TcpPort = _localNode.TcpPort,
+            MachineName = localNode.MachineName,
+            DisplayName = localNode.DisplayName,
+            PublicKey = localNode.Identity.EncodedKey,
+            TcpPort = localNode.TcpPort,
         };
 
         return SendDiscoveryMessageAsync(announce, target, cancellationToken);

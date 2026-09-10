@@ -73,6 +73,18 @@ public sealed class TwoNodeIntegrationTests
         Assert.True(bobPeers.TryGet(aliceIdentity.Fingerprint, out var alicePeer));
         Assert.NotNull(alicePeer);
 
+        bobDiscovery.UpdateDisplayName("Robert");
+        await bobDiscovery.SendHelloAsync(
+            new IPEndPoint(IPAddress.Loopback, aliceDiscovery.LocalPort),
+            cancellationToken);
+
+        var aliceSawRenamedBob = await ReadUntilAsync<PeerDiscoveredEvent>(
+            aliceEvents.Reader,
+            cancellationToken);
+
+        Assert.Equal(PeerRegistrationChange.Updated, aliceSawRenamedBob.Change);
+        Assert.Equal("Robert", aliceSawRenamedBob.Peer.DisplayName);
+
         var encryptedMessage = HybridCipher.Encrypt(
             "hello across loopback",
             Guid.NewGuid(),

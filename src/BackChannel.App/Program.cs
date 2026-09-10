@@ -34,6 +34,7 @@ builder.Services.AddSingleton<IBackChannelTerminal, SpectreBackChannelTerminal>(
 builder.Services.AddSingleton<ChatSession>();
 
 builder.Services.AddSingleton<IBackChannelCommand, HelloCommand>();
+builder.Services.AddSingleton<IBackChannelCommand, NickCommand>();
 builder.Services.AddSingleton<IBackChannelCommand, PeersCommand>();
 builder.Services.AddSingleton<IBackChannelCommand, MessageCommand>();
 builder.Services.AddSingleton<IBackChannelCommand, GroupCommand>();
