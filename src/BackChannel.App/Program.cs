@@ -32,11 +32,15 @@ builder.Services.AddSingleton<IHostedService>(
     static services => services.GetRequiredService<BackChannelNode>());
 builder.Services.AddSingleton<IBackChannelTerminal, SpectreBackChannelTerminal>();
 builder.Services.AddSingleton<ChatSession>();
+builder.Services.AddSingleton<FileTransferService>();
+builder.Services.AddSingleton<IHostedService>(
+    static services => services.GetRequiredService<FileTransferService>());
 
 builder.Services.AddSingleton<IBackChannelCommand, HelloCommand>();
 builder.Services.AddSingleton<IBackChannelCommand, NickCommand>();
 builder.Services.AddSingleton<IBackChannelCommand, PeersCommand>();
 builder.Services.AddSingleton<IBackChannelCommand, MessageCommand>();
+builder.Services.AddSingleton<IBackChannelCommand, SendFileCommand>();
 builder.Services.AddSingleton<IBackChannelCommand, GroupCommand>();
 builder.Services.AddSingleton<IBackChannelCommand, HelpCommand>();
 builder.Services.AddSingleton<IBackChannelCommand, QuitCommand>();

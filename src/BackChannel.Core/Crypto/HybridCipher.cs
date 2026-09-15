@@ -29,10 +29,12 @@ public static class HybridCipher
         Guid conversationId,
         string conversationName,
         IdentityKeyPair sender,
-        IEnumerable<PublicIdentity> recipients)
+        IEnumerable<PublicIdentity> recipients,
+        string contentType = ChatMessage.ContentTypes.Chat)
     {
         ArgumentNullException.ThrowIfNull(plaintext);
         ArgumentException.ThrowIfNullOrWhiteSpace(conversationName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(contentType);
         ArgumentNullException.ThrowIfNull(sender);
         ArgumentNullException.ThrowIfNull(recipients);
 
@@ -104,6 +106,7 @@ public static class HybridCipher
                 ConversationName = conversationName,
                 ParticipantFingerprints = participantFingerprints,
                 SenderFingerprint = sender.Fingerprint.Value,
+                ContentType = contentType,
                 RecipientKeys = recipientKeys,
                 Nonce = Convert.ToBase64String(nonce),
                 Ciphertext = Convert.ToBase64String(ciphertext),

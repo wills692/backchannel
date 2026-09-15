@@ -1,9 +1,19 @@
 <Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+  </Configurations>
   <Folder Name="/src/">
-    <Project Path="src/BackChannel.App/BackChannel.App.csproj" />
-    <Project Path="src/BackChannel.Core/BackChannel.Core.csproj" />
+    <Project Path="src/BackChannel.App/BackChannel.App.csproj">
+      <Platform Solution="*|x64" Project="x64" />
+    </Project>
+    <Project Path="src/BackChannel.Core/BackChannel.Core.csproj">
+      <Platform Solution="*|x64" Project="x64" />
+    </Project>
   </Folder>
   <Folder Name="/tests/">
-    <Project Path="tests/BackChannel.Core.Tests/BackChannel.Core.Tests.csproj" />
+    <Project Path="tests/BackChannel.Core.Tests/BackChannel.Core.Tests.csproj">
+      <Platform Solution="*|x64" Project="x64" />
+    </Project>
   </Folder>
 </Solution>

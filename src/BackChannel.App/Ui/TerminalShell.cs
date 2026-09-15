@@ -1,8 +1,12 @@
 using System.Security.Cryptography;
+using System.Net.Sockets;
+using System.Text.Json;
 using BackChannel.App.Commands;
 using BackChannel.App.Runtime;
 using BackChannel.Core.Crypto;
 using BackChannel.Core.Networking;
+using BackChannel.Core.Peers;
+using BackChannel.Core.Protocol;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -11,6 +15,7 @@ namespace BackChannel.App.Ui;
 public sealed class TerminalShell(
     BackChannelNode node,
     ChatSession session,
+    FileTransferService transfers,
     CommandDispatcher dispatcher,
     IBackChannelTerminal terminal,
     IHostApplicationLifetime applicationLifetime,
@@ -33,13 +38,24 @@ public sealed class TerminalShell(
         terminal.ShowBanner(node);
 
         Task<string?>? inputTask = null;
+        PendingFileOffer? pendingFileOffer = null;
+        Task? offerTimeoutTask = null;
 
         while (!stoppingToken.IsCancellationRequested)
         {
             inputTask ??= terminal.ReadLineAsync(stoppingToken);
             var eventTask = node.Events.WaitToReadAsync(stoppingToken).AsTask();
-            var completed = await Task.WhenAny(inputTask, eventTask)
+            var completed = offerTimeoutTask is null
+                ? await Task.WhenAny(inputTask, eventTask).ConfigureAwait(false)
+                : await Task.WhenAny(inputTask, eventTask, offerTimeoutTask)
                 .ConfigureAwait(false);
+
+            if (completed == offerTimeoutTask)
+            {
+                pendingFileOffer = null;
+                offerTimeoutTask = null;
+                continue;
+            }
 
             if (completed == inputTask)
             {
@@ -50,6 +66,34 @@ public sealed class TerminalShell(
                 {
                     applicationLifetime.StopApplication();
                     break;
+                }
+
+                if (pendingFileOffer is not null)
+                {
+                    try
+                    {
+                        if (await ProcessFileOfferResponseAsync(
+                                pendingFileOffer,
+                                line,
+                                stoppingToken)
+                            .ConfigureAwait(false))
+                        {
+                            pendingFileOffer = null;
+                            offerTimeoutTask = null;
+                        }
+                    }
+                    catch (Exception exception) when (
+                        exception is IOException
+                            or InvalidDataException
+                            or InvalidOperationException
+                            or SocketException)
+                    {
+                        terminal.WriteError(exception.Message);
+                        pendingFileOffer = null;
+                        offerTimeoutTask = null;
+                    }
+
+                    continue;
                 }
 
                 await dispatcher.DispatchAsync(line, stoppingToken)
@@ -64,13 +108,27 @@ public sealed class TerminalShell(
             {
                 while (node.Events.TryRead(out var inboundEvent))
                 {
-                    ProcessInboundEvent(inboundEvent);
+                    var offer = await ProcessInboundEventAsync(
+                            inboundEvent,
+                            pendingFileOffer,
+                            stoppingToken)
+                        .ConfigureAwait(false);
+                    if (offer is not null)
+                    {
+                        pendingFileOffer = offer;
+                        offerTimeoutTask = Task.Delay(
+                            TimeSpan.FromSeconds(60),
+                            stoppingToken);
+                    }
                 }
             }
         }
     }
 
-    private void ProcessInboundEvent(InboundEvent inboundEvent)
+    private async Task<PendingFileOffer?> ProcessInboundEventAsync(
+        InboundEvent inboundEvent,
+        PendingFileOffer? pendingFileOffer,
+        CancellationToken cancellationToken)
     {
         switch (inboundEvent)
         {
@@ -103,8 +161,11 @@ public sealed class TerminalShell(
                 break;
 
             case ChatMessageReceivedEvent chat:
-                ProcessChatMessage(chat);
-                break;
+                return await ProcessChatMessageAsync(
+                        chat,
+                        pendingFileOffer,
+                        cancellationToken)
+                    .ConfigureAwait(false);
 
             case NetworkFaultEvent fault:
                 NetworkInputRejected(
@@ -116,9 +177,14 @@ public sealed class TerminalShell(
                     $"{fault.Component}: {fault.Error.Message}");
                 break;
         }
+
+        return null;
     }
 
-    private void ProcessChatMessage(ChatMessageReceivedEvent chat)
+    private async Task<PendingFileOffer?> ProcessChatMessageAsync(
+        ChatMessageReceivedEvent chat,
+        PendingFileOffer? pendingFileOffer,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -127,21 +193,106 @@ public sealed class TerminalShell(
             {
                 terminal.WriteWarning(
                     $"Ignored a message from unknown key {fingerprint.Value[..12]}.");
-                return;
+                return null;
             }
 
             var plaintext = node.DecryptMessage(chat.Message, sender);
-            var conversation = session.Receive(chat.Message, sender);
-            terminal.WriteIncomingMessage(conversation, sender, plaintext);
+            switch (chat.Message.ContentType)
+            {
+                case ChatMessage.ContentTypes.Chat:
+                {
+                    var conversation = session.Receive(chat.Message, sender);
+                    terminal.WriteIncomingMessage(conversation, sender, plaintext);
+                    break;
+                }
+
+                case ChatMessage.ContentTypes.FileOffer:
+                {
+                    var offer = JsonSerializer.Deserialize<FileOfferPayload>(plaintext)
+                        ?? throw new InvalidDataException("The file offer payload was empty.");
+                    if (pendingFileOffer is not null)
+                    {
+                        await transfers.DeclineOfferAsync(offer, sender, cancellationToken)
+                            .ConfigureAwait(false);
+                        break;
+                    }
+
+                    terminal.WriteInfo(
+                        $"{sender.DisplayName} offers {offer.FileName} ({offer.Length} bytes). Accept? [Y/N]");
+                    return new PendingFileOffer(offer, sender);
+                }
+
+                case ChatMessage.ContentTypes.FileResponse:
+                {
+                    var response = JsonSerializer.Deserialize<FileResponsePayload>(plaintext)
+                        ?? throw new InvalidDataException("The file response payload was empty.");
+                    transfers.ReceiveResponse(response, sender);
+                    break;
+                }
+
+                case ChatMessage.ContentTypes.FileChunk:
+                {
+                    var chunk = JsonSerializer.Deserialize<FileChunkPayload>(plaintext)
+                        ?? throw new InvalidDataException("The file chunk payload was empty.");
+                    var completedPath = await transfers.ReceiveChunkAsync(
+                            chunk,
+                            sender,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    if (completedPath is not null)
+                    {
+                        terminal.WriteInfo($"Received {Path.GetFileName(completedPath)}.");
+                    }
+
+                    break;
+                }
+
+                default:
+                    throw new InvalidDataException("The encrypted message has an unsupported content type.");
+            }
         }
         catch (Exception exception) when (
             exception is CryptographicException
                 or InvalidDataException
                 or FormatException
-                or ArgumentException)
+                or ArgumentException
+                or JsonException)
         {
             ChatMessageRejected(logger, chat.RemoteEndpoint, exception);
             terminal.WriteWarning("Rejected an invalid encrypted message.");
         }
+
+        return null;
     }
+
+    private async Task<bool> ProcessFileOfferResponseAsync(
+        PendingFileOffer pendingFileOffer,
+        string input,
+        CancellationToken cancellationToken)
+    {
+        if (string.Equals(input.Trim(), "Y", StringComparison.OrdinalIgnoreCase))
+        {
+            await transfers.AcceptOfferAsync(
+                    pendingFileOffer.Offer,
+                    pendingFileOffer.Sender,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return true;
+        }
+
+        if (string.Equals(input.Trim(), "N", StringComparison.OrdinalIgnoreCase))
+        {
+            await transfers.DeclineOfferAsync(
+                    pendingFileOffer.Offer,
+                    pendingFileOffer.Sender,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return true;
+        }
+
+        terminal.WriteWarning("Enter Y to accept or N to decline the offered file.");
+        return false;
+    }
+
+    private sealed record PendingFileOffer(FileOfferPayload Offer, Peer Sender);
 }

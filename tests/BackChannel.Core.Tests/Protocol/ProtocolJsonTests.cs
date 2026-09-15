@@ -10,7 +10,7 @@ public sealed class ProtocolJsonTests
     [Fact]
     public void EveryEnvelopeTypeRoundTripsPolymorphically()
     {
-        Assert.Equal(2, Envelope.CurrentProtocolVersion);
+        Assert.Equal(3, Envelope.CurrentProtocolVersion);
 
         Envelope[] messages =
         [
@@ -84,5 +84,32 @@ public sealed class ProtocolJsonTests
             JsonSerializer.Deserialize(
                 Encoding.UTF8.GetBytes(json),
                 BackChannelJsonContext.Default.Envelope));
+    }
+
+    [Fact]
+    public void FileTransferPayloadsRoundTrip()
+    {
+        var offer = new FileOfferPayload
+        {
+            TransferId = Guid.NewGuid(),
+            FileName = "report.pdf",
+            Length = 1024,
+            Sha256 = new string('a', 64),
+        };
+        var chunk = new FileChunkPayload
+        {
+            TransferId = offer.TransferId,
+            Sequence = 2,
+            IsFinal = true,
+            Data = "Zm9v",
+        };
+
+        var roundTrippedOffer = JsonSerializer.Deserialize<FileOfferPayload>(
+            JsonSerializer.Serialize(offer));
+        var roundTrippedChunk = JsonSerializer.Deserialize<FileChunkPayload>(
+            JsonSerializer.Serialize(chunk));
+
+        Assert.Equal(offer, roundTrippedOffer);
+        Assert.Equal(chunk, roundTrippedChunk);
     }
 }

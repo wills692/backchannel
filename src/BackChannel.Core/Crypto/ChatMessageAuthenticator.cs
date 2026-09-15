@@ -28,6 +28,7 @@ internal static class ChatMessageAuthenticator
         }
 
         WriteString(stream, message.SenderFingerprint);
+        WriteString(stream, message.ContentType);
         WriteInt32(stream, message.RecipientKeys.Count);
 
         foreach (var recipient in message.RecipientKeys)

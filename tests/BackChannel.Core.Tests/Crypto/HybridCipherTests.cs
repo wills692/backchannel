@@ -117,6 +117,33 @@ public sealed class HybridCipherTests
     }
 
     [Fact]
+    public void FileContentTypeIsEncryptedAndSigned()
+    {
+        using var sender = IdentityKeyPair.Create(2048);
+        using var recipient = IdentityKeyPair.Create(2048);
+        var message = HybridCipher.Encrypt(
+            "encrypted file payload",
+            Guid.NewGuid(),
+            "File transfer",
+            sender,
+            [recipient.PublicIdentity],
+            ChatMessage.ContentTypes.FileOffer);
+        var tampered = message with
+        {
+            ContentType = ChatMessage.ContentTypes.Chat,
+        };
+
+        Assert.Equal(
+            ChatMessage.ContentTypes.FileOffer,
+            message.ContentType);
+        Assert.Equal(
+            "encrypted file payload",
+            HybridCipher.Decrypt(message, sender.PublicIdentity, recipient));
+        Assert.Throws<CryptographicException>(() =>
+            HybridCipher.Decrypt(tampered, sender.PublicIdentity, recipient));
+    }
+
+    [Fact]
     public void NamedGroupMetadataIsSignedAndValidated()
     {
         using var sender = IdentityKeyPair.Create(2048);

@@ -12,4 +12,7 @@ namespace BackChannel.Core.Protocol;
 [JsonSerializable(typeof(ChatMessage))]
 [JsonSerializable(typeof(GoodbyeMessage))]
 [JsonSerializable(typeof(RecipientKeyEnvelope))]
+[JsonSerializable(typeof(FileOfferPayload))]
+[JsonSerializable(typeof(FileResponsePayload))]
+[JsonSerializable(typeof(FileChunkPayload))]
 public sealed partial class BackChannelJsonContext : JsonSerializerContext;

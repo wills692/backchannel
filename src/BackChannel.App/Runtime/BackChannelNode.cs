@@ -6,6 +6,7 @@ using BackChannel.Core.Conversations;
 using BackChannel.Core.Crypto;
 using BackChannel.Core.Networking;
 using BackChannel.Core.Peers;
+using BackChannel.Core.Protocol;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -224,12 +225,44 @@ public sealed class BackChannelNode : IHostedService, IAsyncDisposable
     }
 
     public string DecryptMessage(
-        Core.Protocol.ChatMessage message,
+        ChatMessage message,
         Peer sender)
     {
         ArgumentNullException.ThrowIfNull(message);
         ArgumentNullException.ThrowIfNull(sender);
         return HybridCipher.Decrypt(message, sender.Identity, _identity);
+    }
+
+    internal Task SendEncryptedMessageAsync(
+        Peer recipient,
+        Guid conversationId,
+        string contentType,
+        string plaintext,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(recipient);
+        ArgumentException.ThrowIfNullOrWhiteSpace(contentType);
+        ArgumentException.ThrowIfNullOrWhiteSpace(plaintext);
+
+        if (conversationId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "An encrypted message requires a non-empty conversation identifier.",
+                nameof(conversationId));
+        }
+
+        var message = HybridCipher.Encrypt(
+            plaintext,
+            conversationId,
+            "File transfer",
+            _identity,
+            [recipient.Identity],
+            contentType);
+
+        return TcpMessageSender.SendAsync(
+            recipient.TcpEndpoint,
+            message,
+            cancellationToken);
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
